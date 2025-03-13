@@ -26,35 +26,48 @@ function updateSerialNumbers(data) {
 
 app.post('/scrape-attendance', async (req, res) => {
   let { username, password } = req.body;
+  // Fallback defaults if needed
+  username = username || process.env.DEFAULT_USERNAME || '2023UGCS120';
+  password = password || process.env.DEFAULT_PASSWORD || '9845920244';
 
   let browser;
   try {
+    console.log('Launching browser with Playwright...');
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext();
     const page = await context.newPage();
 
-    await page.goto('https://online.nitjsr.ac.in/endsem/Login.aspx', { waitUntil: 'domcontentloaded', timeout: 10000 });
-    
+    // Optional: capture a screenshot after page load for debugging
+    console.log('Navigating to Login page...');
+    await page.goto('https://online.nitjsr.ac.in/endsem/Login.aspx', { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.screenshot({ path: 'login_page.png' }); // Debug: Check login page appearance
+
+    console.log('Waiting for login fields...');
+    await page.waitForSelector('#txtuser_id', { timeout: 10000 });
     await page.fill('#txtuser_id', username);
     await page.fill('#txtpassword', password);
     
+    console.log('Submitting login form...');
     await Promise.all([
       page.click('#btnsubmit'),
-      page.waitForNavigation({ waitUntil: 'networkidle', timeout: 10000 }),
+      page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }),
     ]);
+    // await page.screenshot({ path: 'after_login.png' }); // Debug: Confirm successful login
 
-    await page.goto('https://online.nitjsr.ac.in/endsem/StudentAttendance/ClassAttendance.aspx', { waitUntil: 'networkidle', timeout: 10000 });
-    await page.waitForSelector('table.table');
+    console.log('Navigating to Attendance page...');
+    await page.goto('https://online.nitjsr.ac.in/endsem/StudentAttendance/ClassAttendance.aspx', { waitUntil: 'networkidle', timeout: 15000 });
+    await page.waitForSelector('table.table', { timeout: 15000 });
+    await page.screenshot({ path: 'attendance_page.png' }); // Debug: Check if attendance table is visible
 
+    console.log('Scraping attendance data...');
     const attendanceData = await page.evaluate(() => {
       const rows = Array.from(document.querySelectorAll('table.table tr:not(:first-child)'));
       let currentIndex = 1;
       const cleanText = (text) => text?.trim().split('\n')[0].trim() || '';
-
+      
       return rows.map(row => {
         const cells = Array.from(row.querySelectorAll('td'));
         if (cells.length < 6) return null;
-        
         return {
           slNo: (currentIndex++).toString(),
           subjectCode: cleanText(cells[1]?.innerText),
@@ -66,12 +79,15 @@ app.post('/scrape-attendance', async (req, res) => {
       }).filter(Boolean);
     });
 
+    console.log('Attendance data scraped:', attendanceData);
     const cleanedData = cleanAttendanceData(attendanceData);
     const finalData = updateSerialNumbers(cleanedData);
 
+    console.log('Closing browser and sending response...');
     await browser.close();
     res.json(finalData);
   } catch (error) {
+    console.error('Error during scraping:', error);
     if (browser) await browser.close();
     res.status(500).json({ error: 'Scraping failed', details: error.message });
   }
