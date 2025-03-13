@@ -7,8 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "build": "echo 'No build step needed'",
-    "postinstall": "apt-get update && apt-get install -y chromium-browser"
+    "build": "echo 'No build step needed'"
   },
   "keywords": [],
   "author": "shivapreetham",
