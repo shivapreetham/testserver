@@ -32,50 +32,39 @@ mongoose
 
 /**
  * Scrape attendance data using Playwright.
- * This function includes debugging logs, screenshot options, and cleaning/updating of scraped data.
  */
 async function scrapeAttendance(username, password) {
-  console.log(username + ' ' + password);
+  console.log(`Scraping for ${username}`);
   let browser;
   try {
-    console.log(`Launching browser with Playwright for ${username}...`);
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext();
     const page = await context.newPage();
 
-    console.log('Navigating to Login page...');
     await page.goto('https://online.nitjsr.ac.in/endsem/Login.aspx', {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
-    // Optional screenshot: await page.screenshot({ path: `login_page_${username}.png` });
 
-    console.log('Waiting for login fields...');
     await page.waitForSelector('#txtuser_id', { timeout: 10000 });
     await page.fill('#txtuser_id', username);
     await page.fill('#txtpassword', password);
 
-    console.log('Submitting login form...');
     await Promise.all([
       page.click('#btnsubmit'),
       page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 }),
     ]);
-    // Optional screenshot: await page.screenshot({ path: `after_login_${username}.png` });
 
-    console.log('Navigating to Attendance page...');
     await page.goto('https://online.nitjsr.ac.in/endsem/StudentAttendance/ClassAttendance.aspx', {
       waitUntil: 'networkidle',
       timeout: 30000,
     });
     await page.waitForSelector('table.table', { timeout: 30000 });
-    // Optional screenshot: await page.screenshot({ path: `attendance_page_${username}.png` });
 
-    console.log('Scraping attendance data...');
     const attendanceData = await page.evaluate(() => {
       const rows = Array.from(document.querySelectorAll('table.table tr:not(:first-child)'));
       let currentIndex = 1;
       const cleanText = (text) => text?.trim().split('\n')[0].trim() || '';
-
       return rows
         .map((row) => {
           const cells = Array.from(row.querySelectorAll('td'));
@@ -92,36 +81,24 @@ async function scrapeAttendance(username, password) {
         .filter(Boolean);
     });
 
-    console.log('Attendance data scraped:', attendanceData);
+    // Clean out numeric-only subject names and update serial numbers.
+    const cleanAttendanceData = (data) =>
+      data.filter((item) => !/^\d+$/.test(item.subjectName));
+    const updateSerialNumbers = (data) =>
+      data.map((item, index) => ({ ...item, slNo: (index + 1).toString() }));
 
-    // Filter out rows where subjectName is purely numeric.
-    function cleanAttendanceData(data) {
-      return data.filter((item) => !/^\d+$/.test(item.subjectName));
-    }
-
-    // Update serial numbers sequentially.
-    function updateSerialNumbers(data) {
-      return data.map((item, index) => ({
-        ...item,
-        slNo: (index + 1).toString(),
-      }));
-    }
-
-    const cleanedData = cleanAttendanceData(attendanceData);
-    const finalData = updateSerialNumbers(cleanedData);
-
-    console.log('Closing browser and returning scraped data...');
+    const finalData = updateSerialNumbers(cleanAttendanceData(attendanceData));
     await browser.close();
     return finalData;
   } catch (error) {
     if (browser) await browser.close();
-    console.error(`Error scraping attendance for ${username}:`, error);
+    console.error(`Error scraping for ${username}:`, error);
     throw error;
   }
 }
 
 /**
- * Check if cumulative attendance for a user already exists for a given date.
+ * Find an existing Attendance record for a given user and date.
  */
 async function attendanceExists(userId, date) {
   const startOfDay = new Date(date);
@@ -136,17 +113,17 @@ async function attendanceExists(userId, date) {
 
 /**
  * Save or update cumulative attendance for today.
- * If today's attendance exists, update its AttendanceSubject records; otherwise, create a new record.
+ * If a record exists, update its AttendanceSubject records.
  */
 async function saveAttendance(userId, attendanceData) {
   const today = new Date();
   const exists = await attendanceExists(userId, today);
   
   if (exists) {
-    console.log(`Attendance data already exists for user ${userId} for today. Updating...`);
-    // Remove existing AttendanceSubject records for this attendance record.
+    console.log(`Updating attendance for user ${userId} for today.`);
+    // Remove existing AttendanceSubject documents
     await AttendanceSubject.deleteMany({ attendanceId: exists._id });
-    // Create new AttendanceSubject records.
+    // Create new AttendanceSubject documents for each subject
     const subjectPromises = attendanceData.map(async (subjectData) => {
       const newSubject = new AttendanceSubject({
         ...subjectData,
@@ -157,7 +134,7 @@ async function saveAttendance(userId, attendanceData) {
     await Promise.all(subjectPromises);
     return exists;
   } else {
-    // Create new attendance record.
+    // Create a new Attendance record
     const newAttendance = new Attendance({
       userId: userId.toString(),
       date: today,
@@ -171,14 +148,14 @@ async function saveAttendance(userId, attendanceData) {
       return await newSubject.save();
     });
     await Promise.all(subjectPromises);
-    console.log(`Saved cumulative attendance for user ${userId}.`);
+    console.log(`Saved new attendance for user ${userId}.`);
     return savedAttendance;
   }
 }
 
 /**
- * Compare today's cumulative attendance with yesterday's and update daily differences.
- * If today's DailyAttendance exists, update it; otherwise, create a new record.
+ * Compare today's cumulative attendance with yesterday's,
+ * then update or create a DailyAttendance record accordingly.
  */
 async function compareAndSaveDailyAttendance(userId, todayAttendance) {
   const today = new Date();
@@ -193,28 +170,23 @@ async function compareAndSaveDailyAttendance(userId, todayAttendance) {
   try {
     const yesterdayAttendanceRecord = await Attendance.findOne({
       userId: userId.toString(),
-      date: {
-        $gte: yesterdayStart,
-        $lt: todayStart,
-      },
+      date: { $gte: yesterdayStart, $lt: todayStart },
     });
 
     if (!yesterdayAttendanceRecord) {
-      console.log(`No attendance data for yesterday for user ${userId}.`);
+      console.log(`No yesterday attendance for user ${userId}.`);
       return { message: 'No attendance data for yesterday' };
     }
     
-    // Get yesterday's AttendanceSubject records
     const yesterdaySubjects = await AttendanceSubject.find({
       attendanceId: yesterdayAttendanceRecord._id,
     });
 
-    // Check if a DailyAttendance record for today exists
+    // Check if today's DailyAttendance exists; if so, update it.
     let dailyRecord = await DailyAttendance.findOne({
       userId: userId.toString(),
       date: { $gte: todayStart, $lte: today },
     });
-
     if (!dailyRecord) {
       dailyRecord = new DailyAttendance({
         userId: userId.toString(),
@@ -222,7 +194,7 @@ async function compareAndSaveDailyAttendance(userId, todayAttendance) {
       });
       dailyRecord = await dailyRecord.save();
     } else {
-      // If exists, remove its DailyAttendanceSubject records to update them
+      // Remove old daily attendance subject records
       await DailyAttendanceSubject.deleteMany({ dailyAttendanceId: dailyRecord._id });
     }
 
@@ -240,7 +212,6 @@ async function compareAndSaveDailyAttendance(userId, todayAttendance) {
         const attendedTodayCount = todayAttended - yesterdayAttended;
 
         if (classesHeldTodayCount > 0) {
-          // Create daily attendance subject record
           const dailySubject = new DailyAttendanceSubject({
             subjectCode: todaySubject.subjectCode,
             subjectName: todaySubject.subjectName,
@@ -268,10 +239,10 @@ async function compareAndSaveDailyAttendance(userId, todayAttendance) {
       }
     }
 
-    console.log(`Saved daily attendance differences for user ${userId}.`);
+    console.log(`Daily attendance differences saved for user ${userId}.`);
     return { classesHeldToday, missedClasses };
   } catch (error) {
-    console.error(`Error comparing attendance for user ${userId}:`, error);
+    console.error(`Error comparing daily attendance for user ${userId}:`, error);
     throw error;
   }
 }
@@ -295,7 +266,6 @@ async function calculateAttendanceMetrics(userId, attendanceData) {
       const isAbove75 = attendancePercentage >= 75;
       let classesNeeded = 0;
       let classesCanSkip = 0;
-
       if (!isAbove75) {
         classesNeeded = Math.ceil((0.75 * total - attended) / 0.25);
       } else {
@@ -325,7 +295,7 @@ async function calculateAttendanceMetrics(userId, attendanceData) {
           attendancePercentage: attendancePercentage,
           isAbove75: isAbove75,
           classesNeeded: classesNeeded,
-          classesCanSkip: classesCanSkip
+          classesCanSkip: classesCanSkip,
         });
         await newSubjectMetrics.save();
         subjectMetrics.push(newSubjectMetrics);
@@ -347,7 +317,7 @@ async function calculateAttendanceMetrics(userId, attendanceData) {
 /**
  * GET route to trigger the automated attendance processing.
  * This route fetches all users with valid NIT credentials, scrapes their attendance,
- * saves cumulative data (updating it if it already exists for today), computes daily differences,
+ * saves or updates cumulative attendance for today, computes daily differences,
  * and updates attendance metrics.
  */
 app.get('/', async (req, res) => {
@@ -385,7 +355,6 @@ app.get('/', async (req, res) => {
       }
     }
 
-    // Optionally, clean up old attendance records here.
     res.json({
       success: true,
       message: 'Attendance processed successfully.',
