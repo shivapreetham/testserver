@@ -30,50 +30,47 @@ mongoose
   .then(() => console.log('MongoDB connected'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
-// Add this route in index.js
+
 app.get('/userSpecific', async (req, res) => {
   try {
-    const { email } = req.query;
-    
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email parameter is required'
-      });
-    }
-    
-    // Find user with this email
-    const user = await User.findOne({ 
-      email: email,
+    // Find all users with uninitialized attendance data.
+    const users = await User.find({
       NITUsername: { $exists: true, $ne: '' },
-      NITPassword: { $exists: true, $ne: '' }
+      NITPassword: { $exists: true, $ne: '' },
+      overallAttendedClasses: 0,
+      overallTotalClasses: 0,
+      overallPercentage: 0
     });
-    
-    if (!user) {
+
+    if (!users.length) {
       return res.status(404).json({
         success: false,
-        message: 'User not found or missing NIT credentials'
+        message: 'No users found for attendance processing'
       });
     }
-    
-    console.log(`Processing specific user ${user._id}...`);
-    const attendanceData = await scrapeAttendance(user.NITUsername, user.NITPassword);
-    await saveOrUpdateAttendance(user._id, attendanceData);
-    const dailyComparison = await compareAndUpdateDailyAttendance(user._id, attendanceData);
-    await calculateAndUpdateMetrics(user._id, attendanceData);
-    
-    res.json({
-      success: true,
-      message: 'User attendance processed successfully',
-      result: {
+
+    // Process each user.
+    const results = [];
+    for (const user of users) {
+      console.log(`Processing specific user ${user._id}...`);
+      const attendanceData = await scrapeAttendance(user.NITUsername, user.NITPassword);
+      await saveOrUpdateAttendance(user._id, attendanceData);
+      const dailyComparison = await compareAndUpdateDailyAttendance(user._id, attendanceData);
+      await calculateAndUpdateMetrics(user._id, attendanceData);
+      results.push({
         userId: user._id,
         status: 'Processed',
         dailyComparison
-      }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'User attendance processed successfully',
+      result: results
     });
-    
   } catch (error) {
-    console.error('Error processing specific user:', error);
+    console.error('Error processing user attendance:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to process user attendance data',
