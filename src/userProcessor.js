@@ -12,11 +12,13 @@ function delay(ms) {
 }
 
 async function processUsers() {
+  // Find all users with NIT credentials and sort them by overallTotalClasses (ascending)
   const users = await User.find({
     NITUsername: { $exists: true, $ne: '' },
     NITPassword: { $exists: true, $ne: '' },
-  });
-  console.log("Users with NIT credentials:", users);
+  }).sort({ overallTotalClasses: 1 });
+  
+  console.log("Users with NIT credentials (sorted):", users);
   
   if (!users.length) {
     throw new Error('No users with valid NIT credentials found.');
@@ -47,7 +49,6 @@ async function processUsers() {
       });
     }
   }
-  // console.log("Results:", results);
   return results;
 }
 
