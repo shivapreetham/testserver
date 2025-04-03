@@ -47,6 +47,7 @@ async function processUsers() {
       });
     }
   }
+  // console.log("Results:", results);
   return results;
 }
 

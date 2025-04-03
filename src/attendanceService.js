@@ -130,7 +130,7 @@ import {
           }
         }
       }
-      console.log(`Daily attendance differences updated for user ${userId}.`);
+      console.log(`Daily attendance differences updated for user ${userId}. is ${classesHeldToday}`);
       return { classesHeldToday, missedClasses };
     } catch (error) {
       console.error(`Error comparing daily attendance for user ${userId}:`, error);
