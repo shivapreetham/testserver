@@ -4,7 +4,6 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import processUsers from './userProcessor.js';
-
 import { scrapeAttendance } from './Scraper.js';
 import { 
   saveOrUpdateAttendance, 
@@ -30,7 +29,7 @@ mongoose
   .then(() => console.log('MongoDB connected'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
-
+// Add this route in index.js
 app.get('/userSpecific', async (req, res) => {
   try {
     // Find all users with uninitialized attendance data.

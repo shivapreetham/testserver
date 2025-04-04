@@ -23,7 +23,6 @@ async function processUsers() {
   if (!users.length) {
     throw new Error('No users with valid NIT credentials found.');
   }
-
   const results = [];
   for (const user of users) {
     try {
