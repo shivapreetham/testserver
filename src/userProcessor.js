@@ -11,8 +11,6 @@ function delay(ms) {
 }
 
 async function processUsers() {
-  // Find all users with NIT credentials
-  // We'll handle sorting in memory for more complex criteria
   const allUsers = await User.find({
     NITUsername: { $exists: true, $ne: '' },
     NITPassword: { $exists: true, $ne: '' },
@@ -24,21 +22,17 @@ async function processUsers() {
     console.log('No users with valid NIT credentials found.');
     return [];
   }
-  
-  // Custom sorting function:
-  // 1. First prioritize users with overallTotalClasses = 0
-  // 2. Within each group, sort by createdAt (newest first)
   const users = allUsers.sort((a, b) => {
-    // First compare by overallTotalClasses (0 first)
     if ((a.overallTotalClasses || 0) === 0 && (b.overallTotalClasses || 0) > 0) return -1;
     if ((a.overallTotalClasses || 0) > 0 && (b.overallTotalClasses || 0) === 0) return 1;
-    
-    // If overallTotalClasses is the same for both, sort by createdAt (newest first)
-    // Need to handle if createdAt doesn't exist
-    const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-    
-    return bDate - aDate; // Sort in descending order (newest first)
+    if (a.createdAt && !b.createdAt) return -1; 
+    if (!a.createdAt && b.createdAt) return 1;  
+    if (a.createdAt && b.createdAt) {
+      const aDate = new Date(a.createdAt).getTime();
+      const bDate = new Date(b.createdAt).getTime();
+      return bDate - aDate; 
+    }
+    return 0;
   });
   
   console.log('Users sorted by priority (zero attendance + newest first)');
