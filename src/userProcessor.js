@@ -11,24 +11,44 @@ function delay(ms) {
 }
 
 async function processUsers() {
-  // Find all users with NIT credentials and sort them by overallTotalClasses (ascending)
-  const users = await User.find({
+  // Find all users with NIT credentials
+  // We'll handle sorting in memory for more complex criteria
+  const allUsers = await User.find({
     NITUsername: { $exists: true, $ne: '' },
     NITPassword: { $exists: true, $ne: '' },
-  }).sort({ overallTotalClasses: 1 });
+  });
   
-  console.log(`Found ${users.length} users with NIT credentials for processing`);
+  console.log(`Found ${allUsers.length} users with NIT credentials for processing`);
   
-  if (!users.length) {
+  if (!allUsers.length) {
     console.log('No users with valid NIT credentials found.');
     return [];
   }
+  
+  // Custom sorting function:
+  // 1. First prioritize users with overallTotalClasses = 0
+  // 2. Within each group, sort by createdAt (newest first)
+  const users = allUsers.sort((a, b) => {
+    // First compare by overallTotalClasses (0 first)
+    if ((a.overallTotalClasses || 0) === 0 && (b.overallTotalClasses || 0) > 0) return -1;
+    if ((a.overallTotalClasses || 0) > 0 && (b.overallTotalClasses || 0) === 0) return 1;
+    
+    // If overallTotalClasses is the same for both, sort by createdAt (newest first)
+    // Need to handle if createdAt doesn't exist
+    const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    
+    return bDate - aDate; // Sort in descending order (newest first)
+  });
+  
+  console.log('Users sorted by priority (zero attendance + newest first)');
   
   const results = [];
   
   for (const user of users) {
     try {
       console.log(`Processing user ${user._id} (${user.NITUsername}) at ${new Date().toISOString()}...`);
+      console.log(`User details: Total Classes: ${user.overallTotalClasses || 0}, Created: ${user.createdAt || 'unknown'}`);
       
       const attendanceData = await scrapeAttendance(user.NITUsername, user.NITPassword);
       console.log(`Scraped attendance data for user ${user._id}, found ${attendanceData.length} subjects`);
@@ -51,9 +71,9 @@ async function processUsers() {
         dailyComparison,
       });
       
-      // Wait 30 seconds before processing the next user
-      console.log(`Waiting 30 seconds before processing next user...`);
-      await delay(30000);
+      // Wait 60 seconds before processing the next user
+      console.log(`Waiting 60 seconds before processing next user...`);
+      await delay(60000);
     } catch (error) {
       console.error(`Error processing user ${user._id} (${user.NITUsername}):`, error);
       results.push({
@@ -65,8 +85,8 @@ async function processUsers() {
       });
       
       // Still wait before moving to next user even if there was an error
-      console.log(`Error occurred, waiting 15 seconds before continuing...`);
-      await delay(15000); // Shorter delay after errors
+      console.log(`Error occurred, waiting 45 seconds before continuing...`);
+      await delay(45000); // Shorter delay after errors
     }
   }
   
