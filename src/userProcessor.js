@@ -66,8 +66,8 @@ async function processUsers() {
       });
       
       // Wait 60 seconds before processing the next user
-      console.log(`Waiting 60 seconds before processing next user...`);
-      await delay(60000);
+      console.log(`Waiting 30 seconds before processing next user...`);
+      await delay(30000);
     } catch (error) {
       console.error(`Error processing user ${user._id} (${user.NITUsername}):`, error);
       results.push({
